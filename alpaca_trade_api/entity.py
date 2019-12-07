@@ -20,10 +20,12 @@ class Entity(object):
             val = self._raw[key]
             if (isinstance(val, str) and
                     (key.endswith('_at') or
-                     key.endswith('_timestamp') or
+                     key.endswith('timestamp') or
                      key.endswith('_time')) and
                     ISO8601YMD.match(val)):
                 return pd.Timestamp(val)
+            if (isinstance(val, dict)):
+                return Entity(val)
             else:
                 return val
         return super().__getattribute__(key)
