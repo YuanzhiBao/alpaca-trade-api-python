@@ -10,7 +10,7 @@ import logging
 
 
 class StreamConn(object):
-    def __init__(self, key_id=None, secret_key=None, base_url=None):
+    def __init__(self, key_id=None, secret_key=None, base_url=None, loop=None):
         self._key_id, self._secret_key, _ = get_credentials(key_id, secret_key)
         base_url = re.sub(r'^http', 'ws', base_url or get_base_url())
         self._endpoint = base_url + '/stream'
@@ -23,11 +23,16 @@ class StreamConn(object):
         self._retry_wait = int(os.environ.get('APCA_RETRY_WAIT', 3))
         self._retries = 0
         self.polygon = None
-        try:
+        if loop is not None:
+            self.loop = loop
+        else:
             self.loop = asyncio.get_event_loop()
-        except Exception:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
+        # original code
+        # try:
+        #     self.loop = asyncio.get_event_loop()
+        # except Exception:
+        #     self.loop = asyncio.new_event_loop()
+        #     asyncio.set_event_loop(self.loop)
 
     async def _connect(self):
         ws = await websockets.connect(self._endpoint)
@@ -54,7 +59,7 @@ class StreamConn(object):
         self._ws = ws
         await self._dispatch('authorized', msg)
 
-        asyncio.ensure_future(self._consume_msg())
+        asyncio.ensure_future(self._consume_msg(),loop=self.loop)
 
     async def _consume_msg(self):
         ws = self._ws
@@ -69,7 +74,7 @@ class StreamConn(object):
                     await self._dispatch(stream, msg)
         except Exception:
             await self.close()
-            asyncio.ensure_future(self._ensure_ws())
+            asyncio.ensure_future(self._ensure_ws(),loop=self.loop)
 
     async def _ensure_polygon(self):
         if self.polygon is not None:
@@ -91,6 +96,7 @@ class StreamConn(object):
                 await self._connect()
                 if self._streams:
                     await self.subscribe(self._streams)
+                self._retries = 0
                 break
             except Exception:
                 self._ws = None
@@ -111,15 +117,24 @@ class StreamConn(object):
             else:
                 ws_channels.append(c)
 
-        if len(ws_channels) > 0:
-            self._streams |= set(ws_channels)
-            await self._ensure_ws()
-            await self._ws.send(json.dumps({
-                'action': 'listen',
-                'data': {
-                    'streams': ws_channels,
-                }
-            }))
+        while len(ws_channels) > 0:
+            try:
+                self._streams |= set(ws_channels)
+                await self._ensure_ws()
+                await self._ws.send(json.dumps({
+                    'action': 'listen',
+                    'data': {
+                        'streams': ws_channels,
+                    }
+                }))
+                self._retries = 0
+                break
+            except Exception as e:
+                logging.info('Got exception in subscribe, ' + str(e))
+                self._ws = None
+                self._retries += 1
+                await asyncio.sleep(self._retry_wait * self._retry)
+                logging.info('retrying attempt ' + str(self._retries))
 
         if len(polygon_channels) > 0:
             await self._ensure_polygon()
