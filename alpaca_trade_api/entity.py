@@ -57,6 +57,10 @@ class Position(Entity):
     pass
 
 
+class AccountActivity(Entity):
+    pass
+
+
 class Bar(Entity):
     def __getattr__(self, key):
         if key == 't':

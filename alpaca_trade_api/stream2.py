@@ -27,12 +27,19 @@ class StreamConn(object):
             self.loop = loop
         else:
             self.loop = asyncio.get_event_loop()
+<<<<<<< HEAD
         # original code
         # try:
         #     self.loop = asyncio.get_event_loop()
         # except Exception:
         #     self.loop = asyncio.new_event_loop()
         #     asyncio.set_event_loop(self.loop)
+=======
+        except websockets.WebSocketException as wse:
+            logging.warn(wse)
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+>>>>>>> upstream/master
 
     async def _connect(self):
         ws = await websockets.connect(self._endpoint)
@@ -72,7 +79,8 @@ class StreamConn(object):
                 stream = msg.get('stream')
                 if stream is not None:
                     await self._dispatch(stream, msg)
-        except Exception:
+        except websockets.WebSocketException as wse:
+            logging.warn(wse)
             await self.close()
             asyncio.ensure_future(self._ensure_ws(),loop=self.loop)
 
@@ -98,7 +106,8 @@ class StreamConn(object):
                     await self.subscribe(self._streams)
                 self._retries = 0
                 break
-            except Exception:
+            except websockets.WebSocketException as wse:
+                logging.warn(wse)
                 self._ws = None
                 self._retries += 1
                 await asyncio.sleep(self._retry_wait * self._retry)
@@ -119,8 +128,8 @@ class StreamConn(object):
 
         while len(ws_channels) > 0:
             try:
-                self._streams |= set(ws_channels)
                 await self._ensure_ws()
+                self._streams |= set(ws_channels)
                 await self._ws.send(json.dumps({
                     'action': 'listen',
                     'data': {
